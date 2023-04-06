@@ -5,8 +5,8 @@ import time
 import sys
 import os
 
-# # Elasticsearch information
-es_url = os.environ['ES_URL']
+# Elasticsearch information 
+es_url = os.environ['ES_URL'] + '_bulk'  # Upload multiple documents
 es_username = os.environ['ES_USERNAME']
 es_password = os.environ['ES_PASSWORD']
 
