@@ -1,1 +1,149 @@
+import datetime
+import pymysql
+import json
+import time
+import sys
+import os
 
+# # Elasticsearch information
+es_url = os.environ['ES_URL']
+es_username = os.environ['ES_USERNAME']
+es_password = os.environ['ES_PASSWORD']
+
+
+def connect_to_mysql(db_host, db_user, db_password, database_name):
+    return pymysql.connect(
+        host=db_host,
+        user=db_user,
+        password=db_password,
+        database=database_name
+    )
+
+
+def get_table_names(mydb):
+    cursor = mydb.cursor()
+    cursor.execute(f"SHOW TABLES")
+    tables = [table[0] for table in cursor.fetchall() if table[0] not in ['Structure', 'Master']]
+    cursor.close()
+    return tables
+
+
+def get_table_schema(mydb, table_name):
+    cursor = mydb.cursor()
+    cursor.execute(f"DESCRIBE {table_name}")
+    columns = [column[0] for column in cursor.fetchall()]
+    cursor.close()
+    return columns
+
+
+def get_index(table_schema, column_name):
+    my_index = None
+    try:
+        my_index = table_schema.index(column_name)
+    except:
+        pass
+    return my_index
+
+
+def execute_query(mydb, table_name, start, step):
+    cursor = mydb.cursor()
+    cursor.execute(f"SELECT * FROM {table_name} LIMIT {start}, {step}")
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
+
+
+def define_index_name(database_name, table_name):
+    return f'{database_name}_{table_name.lower()}'
+
+
+def define_filename(index_name):
+    return 'bulk_' + index_name + ".json"
+
+
+def write_rows_to_file(rows, columns, index_name, uid_index):
+    with open(define_filename(index_name), "w") as file:
+        for row in rows:
+            uid = row[uid_index]
+            # Check for date or other formatting issues
+            date_index = get_index(columns, 'date')
+            doc = {"index": {"_index": index_name, "_id": uid}}
+            file.write(json.dumps(doc) + "\n")
+            doc = {}
+            for i in range(len(columns)):
+                if i == date_index:
+                    doc[columns[i]] = str(row[i])
+                else:
+                    doc[columns[i]] = row[i]
+            doc.update({
+                "type": "add"
+            })
+            file.write(json.dumps(doc) + "\n")
+        file.write("\n")
+
+
+def execute_curl_command(es_url, es_username, es_password, schema, index_name, start, step):
+    filename = define_filename(index_name)
+    response = os.popen("curl -XPOST -u '" + es_username + ":" + es_password + "' " + es_url + " --data-binary @" + filename + " -H 'Content-Type: application/json'")
+    response_text = response.read()
+    response.close()
+
+    if '429' in response_text:
+        retry_count = 1
+        while retry_count <= 3:
+            print('Too many requests, retrying in 5 seconds...')
+            time.sleep(5)
+            response = os.popen("curl -XPOST -u '" + es_username + ":" + es_password + "' " + es_url + " --data-binary @" + filename + " -H 'Content-Type: application/json'")
+            response_text = response.read()
+            response.close()
+            if '429' not in response_text:
+                print(f'success')
+                break
+            retry_count += 1
+            if retry_count == 3 and '429' in response_text:
+                print(f'retry attempts failed, log and move on')
+                log_message = f"Date:{datetime.datetime.now()}, Index:{index_name}, Query_Params:{str(start)},{str(step)}\n"
+                try:
+                    with open(f'error_log_{schema}.txt', 'a') as file:
+                        # Write error message to file
+                        file.write(log_message)
+                except FileNotFoundError:
+                    # Create file and write error message
+                    with open(f'error_log_{schema}.txt', 'w') as file:
+                        file.write(log_message)
+                break
+
+
+def main(host, user, passwd, schema):
+    # Establish mysql connection
+    mydb = connect_to_mysql(host, user, passwd, schema)
+    # Query for list of tables names or change to req list here
+    table_names = get_table_names(mydb)
+
+    for table in table_names:
+        # Assign naming conventions
+        index_name = define_index_name(schema, table)
+        # Get all fields
+        columns = get_table_schema(mydb, table)
+        # Assign UID from table as id
+        uid_index = get_index(columns, 'uid')
+        # Initialize variables for pagination
+        start = 0
+        interval = 50
+        while True:
+            rows = execute_query(mydb, table, start, interval)
+            if not rows:
+                break  # break out of the loop if there are no more rows
+            write_rows_to_file(rows, columns, index_name, uid_index)
+            execute_curl_command(es_url, es_username, es_password, schema, index_name, start, interval)
+            start += interval
+
+
+if __name__ == '__main__':
+    db_host = sys.argv[1]
+    db_user = sys.argv[2]
+    db_password = sys.argv[3]
+    db_name = sys.argv[4]
+    main(db_host, db_user, db_password, db_name)
+
+# python3 mysql_to_opensearch.py arg1 arg2 arg3 arg4
