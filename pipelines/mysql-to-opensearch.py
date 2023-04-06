@@ -11,12 +11,12 @@ es_username = os.environ['ES_USERNAME']
 es_password = os.environ['ES_PASSWORD']
 
 
-def connect_to_mysql(db_host, db_user, db_password, database_name):
+def connect_to_mysql(db_host, db_user, db_password, db_name):
     return pymysql.connect(
         host=db_host,
         user=db_user,
         password=db_password,
-        database=database_name
+        database=db_name
     )
 
 
@@ -61,7 +61,7 @@ def define_filename(index_name):
     return 'bulk_' + index_name + ".json"
 
 
-def write_rows_to_file(rows, columns, index_name, uid_index):
+def write_rows_to_file(index_name, columns, rows , uid_index):
     with open(define_filename(index_name), "w") as file:
         for row in rows:
             uid = row[uid_index]
@@ -127,14 +127,14 @@ def main(host, user, passwd, schema):
         columns = get_table_schema(mydb, table)
         # Assign UID from table as id
         uid_index = get_index(columns, 'uid')
-        # Initialize variables for pagination
+        # Initialize variables for documents/upload
         start = 0
         interval = 50
         while True:
             rows = execute_query(mydb, table, start, interval)
             if not rows:
-                break  # break out of the loop if there are no more rows
-            write_rows_to_file(rows, columns, index_name, uid_index)
+                break  
+            write_rows_to_file(index_name, columns, rows, uid_index)
             execute_curl_command(es_url, es_username, es_password, schema, index_name, start, interval)
             start += interval
 
