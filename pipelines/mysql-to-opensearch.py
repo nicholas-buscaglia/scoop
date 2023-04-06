@@ -84,7 +84,7 @@ def write_rows_to_file(rows, columns, index_name, uid_index):
 
 def execute_curl_command(es_url, es_username, es_password, schema, index_name, start, step):
     filename = define_filename(index_name)
-    response = os.popen("curl -XPOST -u '" + es_username + ":" + es_password + "' " + es_url + " --data-binary @" + filename + " -H 'Content-Type: application/json'")
+    response = os.popen(f'curl -XPOST -u "{es_username}:{es_password}" {es_url} --data-binary "@{filename}" -H "Content-Type: application/json"')
     response_text = response.read()
     response.close()
 
@@ -93,7 +93,7 @@ def execute_curl_command(es_url, es_username, es_password, schema, index_name, s
         while retry_count <= 3:
             print('Too many requests, retrying in 5 seconds...')
             time.sleep(5)
-            response = os.popen("curl -XPOST -u '" + es_username + ":" + es_password + "' " + es_url + " --data-binary @" + filename + " -H 'Content-Type: application/json'")
+            response = os.popen(f'curl -XPOST -u "{es_username}:{es_password}" {es_url} --data-binary "@{filename}" -H "Content-Type: application/json"')
             response_text = response.read()
             response.close()
             if '429' not in response_text:
