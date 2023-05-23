@@ -23,8 +23,9 @@ def connect_to_mysql(db_host, db_user, db_password, db_name):
 def get_table_names(mydb):
     cursor = mydb.cursor()
     cursor.execute(f"SHOW TABLES")
-    tables = [table[0] for table in cursor.fetchall() if table[0] not in ['Structure', 'Master']]
+    tables = [table[0] for table in cursor.fetchall() if table[0] not in ['Structure']]
     cursor.close()
+    print(f'tables:{tables}')
     return tables
 
 
@@ -91,8 +92,8 @@ def execute_curl_command(es_url, es_username, es_password, schema, index_name, s
     if '429' in response_text:
         retry_count = 1
         while retry_count <= 3:
-            print('Too many requests, retrying in 5 seconds...')
-            time.sleep(5)
+            print('Too many requests, retrying in 3 seconds...')
+            time.sleep(3)
             response = os.popen(f'curl -XPOST -u "{es_username}:{es_password}" {es_url} --data-binary "@{filename}" -H "Content-Type: application/json"')
             response_text = response.read()
             response.close()
@@ -119,8 +120,10 @@ def main(host, user, passwd, schema):
     mydb = connect_to_mysql(host, user, passwd, schema)
     # Query for list of tables names or change to req list here
     table_names = get_table_names(mydb)
+    print(f'table_names: {table_names}')
 
     for table in table_names:
+        print(f'uploading...: {table}')
         # Assign naming conventions
         index_name = define_index_name(schema, table)
         # Get all fields
@@ -129,7 +132,10 @@ def main(host, user, passwd, schema):
         uid_index = get_index(columns, 'uid')
         # Initialize variables for documents/upload
         start = 0
-        interval = 50
+        interval = 50 # Good for rough results!
+        # interval = 5  # Good for fine results!
+        # interval = 500  # Good for rough reviews!
+        # interval = 50  # Good for fine reviews?
         while True:
             rows = execute_query(mydb, table, start, interval)
             if not rows:
